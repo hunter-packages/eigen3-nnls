@@ -1,23 +1,75 @@
-cmake_minimum_required(VERSION 2.6)
-PROJECT(eigen3-nnls)
+cmake_minimum_required(VERSION 3.0)
 
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${PROJECT_SOURCE_DIR}/cmake)
+# Add HunterGate to find Eigen dependency with Hunter
+include("cmake/HunterGate.cmake")
+HunterGate(
+    URL "https://github.com/ruslo/hunter/archive/v0.19.0.tar.gz"
+    SHA1 "e9d11aee66607cfcfbec5e3811d4804135b5bfac"
+)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -frtti -fexceptions -Wno-unknown-pragmas")
-set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -ggdb")
-set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2")
+project(eigen3-nnls VERSION 1.0.0)
 
-set(CMAKE_EXE_LINKER_FLAGS ${CMAKE_SHARED_LINKER_FLAGS_INIT})
-set(CMAKE_SHARED_LINKER_FLAGS ${CMAKE_SHARED_LINKER_FLAGS_INIT})
-set(CMAKE_MODULE_LINKER_FLAGS ${CMAKE_MODULE_LINKER_FLAGS_INIT})
+hunter_add_package(Eigen)
+find_package(Eigen3 CONFIG REQUIRED)
 
-FIND_PACKAGE(Eigen3 REQUIRED)
-SET(NNLS_INSTALL_DIR "${EIGEN3_INCLUDE_DIR}/Eigen/src/NNLS")
-#MESSAGE("NNLS install directory: ${NNLS_INSTALL_DIR}")
+add_library(eigen3-nnls INTERFACE)
+target_link_libraries(eigen3-nnls INTERFACE Eigen3::Eigen)
+set(eigen3-nnls_inc_dir "${CMAKE_CURRENT_LIST_DIR}/src")
+target_include_directories(eigen3-nnls
+  INTERFACE
+  "$<BUILD_INTERFACE:${eigen3-nnls_inc_dir}>" # i.e., submodule use
+  )
 
-INCLUDE_DIRECTORIES(${EIGEN3_INCLUDE_DIRS} "${CMAKE_CURRENT_SOURCE_DIR}/src")
+option(NNLS_BUILD_TEST "Build test program" OFF)
+if(NNLS_BUILD_TEST)
+  add_subdirectory(test)
+endif()
 
-add_subdirectory(src)
-add_subdirectory(test)
+### Install ###
+set(generated_dir "${CMAKE_CURRENT_BINARY_DIR}/generated")
 
-INSTALL(FILES src/nnls.h DESTINATION ${NNLS_INSTALL_DIR})
+set(config_install_dir "lib/cmake/${PROJECT_NAME}")
+set(include_install_dir "include")
+
+set(version_config "${generated_dir}/${PROJECT_NAME}ConfigVersion.cmake")
+set(project_config "${generated_dir}/${PROJECT_NAME}Config.cmake")
+set(targets_export_name "${PROJECT_NAME}Targets")
+set(namespace "${PROJECT_NAME}::")
+
+include(CMakePackageConfigHelpers)
+write_basic_package_version_file(
+  "${version_config}" COMPATIBILITY SameMajorVersion
+  )
+
+# Note: use 'targets_export_name'
+configure_package_config_file(
+  "${PROJECT_SOURCE_DIR}/cmake/Config.cmake.in"
+  "${project_config}"
+  INSTALL_DESTINATION "${config_install_dir}"
+  )
+
+install(
+  TARGETS ${PROJECT_NAME}
+  EXPORT "${targets_export_name}"
+  LIBRARY DESTINATION "lib"
+  ARCHIVE DESTINATION "lib"
+  RUNTIME DESTINATION "bin"
+  INCLUDES DESTINATION "${include_install_dir}"
+  )
+
+install(
+  FILES
+  src/nnls.h
+  DESTINATION "${include_install_dir}/"
+  )
+
+install(
+  FILES "${project_config}" "${version_config}"
+  DESTINATION "${config_install_dir}"
+  )
+
+install(
+  EXPORT "${targets_export_name}"
+  NAMESPACE "${namespace}"
+  DESTINATION "${config_install_dir}"
+  )

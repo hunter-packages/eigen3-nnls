@@ -3,7 +3,7 @@
 #include <iostream>
 
 //#define EIGEN3_NNLS_DEBUG 1
-#include <Eigen/Eigen>
+#include <Eigen/Dense>
 #include "nnls.h"
 
 using namespace Eigen;
