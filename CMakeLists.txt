@@ -7,7 +7,7 @@ HunterGate(
     SHA1 "e9d11aee66607cfcfbec5e3811d4804135b5bfac"
 )
 
-project(eigen3-nnls VERSION 1.0.0)
+project(eigen3-nnls VERSION 1.0.1)
 
 hunter_add_package(Eigen)
 find_package(Eigen3 CONFIG REQUIRED)
