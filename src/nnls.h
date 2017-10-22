@@ -90,7 +90,7 @@ public:
     : _max_iter(max_iter), _num_ls(0), _epsilon(eps),
       _A(A), _AtA(_A.cols(), _A.cols()),
       _x(_A.cols()), _w(_A.cols()), _y(_A.cols()),
-      _P(_A.cols()), _QR(_A.rows(), _A.cols()), _qrCoeffs(_A.cols()), _tempVector(_A.cols())
+      _PT(_A.cols()), _QR(_A.rows(), _A.cols()), _qrCoeffs(_A.cols()), _tempVector(_A.cols())
   {
     // Ensure Scalar type is real.
     EIGEN_STATIC_ASSERT(!NumTraits<Scalar>::IsComplex, NUMERIC_TYPE_MUST_BE_REAL);
@@ -141,7 +141,7 @@ protected:
   /** Searches for the index in Z with the largest value of @c v
    *  (\f$argmax v^P\f$) . */
   Index _argmax_Z(const RowVectorType &v) {
-    const IndicesType &idxs = _P.indices();
+    const IndicesType &idxs = _PT.indices();
     Index m_idx = _Np; Scalar m = v(idxs(m_idx));
     for (Index i=(_Np+1); i<_A.cols(); i++) {
       Index idx = idxs(i);
@@ -153,7 +153,7 @@ protected:
 
   /** Searches for the largest value in \f$v^Z\f$. */
   Scalar _max_Z(const RowVectorType &v) {
-    const IndicesType &idxs = _P.indices();
+    const IndicesType &idxs = _PT.indices();
     Scalar m = v(idxs(_Np));
     for (Index i=(_Np+1); i<_A.cols(); i++) {
       Index idx = idxs(i);
@@ -164,9 +164,9 @@ protected:
 
 
   /** Searches for the smallest value in \f$v^P\f$. */
-  Scalar _min_P(const RowVectorType &v) {
+  Scalar _min_PT(const RowVectorType &v) {
     eigen_assert(_Np > 0);
-    const IndicesType &idxs = _P.indices();
+    const IndicesType &idxs = _PT.indices();
     Scalar m = v(idxs(0));
     for (Index i=1; i<_Np; i++) {
       Index idx = idxs(i);
@@ -220,7 +220,7 @@ protected:
   RowVectorType _Atb;
   /** Holds the current permutation matrix, the first @c _Np columns form the set P and the rest
    * the set Z. */
-  PermutationType _P;
+  PermutationType _PT;
   /** QR decomposition to solve the (passive) sub system (together with @c _qrCoeffs). */
   MatrixType _QR;
   /** QR decomposition to solve the (passive) sub system (together with @c _QR). */
@@ -316,7 +316,7 @@ bool NNLS<MatrixType>::solve(const ColVectorType &b, Heuristic heuristic)
   // Together with _Np, P separates the space of coefficients into a active (Z) and passive (P)
   // set. The first _Np elements form the passive set P and the remaining elements form the
   // active set Z.
-  _P.setIdentity(); _Np = 0;
+  _PT.setIdentity(); _Np = 0;
 
   // Precompute A^T*b
   _Atb = _A.transpose() * b;
@@ -351,7 +351,7 @@ bool NNLS<MatrixType>::solve(const ColVectorType &b, Heuristic heuristic)
       bool feasable = true;
       Scalar alpha = std::numeric_limits<Scalar>::max(); Index remIdx;
       for (Index i=0; i<_Np; i++) {
-        Index idx = _P.indices()(i);
+        Index idx = _PT.indices()(i);
         if (_y(idx) <= 0) {
           Scalar t = -_x(idx)/(_y(idx)-_x(idx));
           if (alpha > t) { alpha = t; remIdx = i; }
@@ -363,7 +363,7 @@ bool NNLS<MatrixType>::solve(const ColVectorType &b, Heuristic heuristic)
 
       // Infeasable solution -> interpolate to feasable one
       for (Index i=0; i<_Np; i++) {
-        Index idx = _P.indices()(i);
+        Index idx = _PT.indices()(i);
         _x(idx) += alpha * (_y(idx) - _x(idx));
       }
 
@@ -377,14 +377,14 @@ bool NNLS<MatrixType>::solve(const ColVectorType &b, Heuristic heuristic)
 template <typename MatrixType>
 void NNLS<MatrixType>::hat(HatMatrixType &H) const {
   // After a call to solve(), the matrix _QR together with _qrCoeff holds the QR decomposition
-  // of A^P, the matrix A with its column permuted according to the permutation matrix _P.
+  // of A^P, the matrix A with its column permuted according to the permutation matrix _PT.
   // This means that the solution is actually given by Q R P x = b and the associated hat matrix
   // is given by H = P^T R^{-1} Q^T.
 
   /// @todo Avoid creation of complete Q matrix!!!
   H.noalias() = QMatrixType(householderSequence(_QR, _qrCoeffs).transpose()).topRows(_A.cols());
   _QR.topRightCorner(_A.cols(), _A.cols()).template triangularView<Upper>().solveInPlace(H);
-  H = _P * H;
+  H = _PT * H;
 #ifdef EIGEN3_NNLS_DEBUG
   std::cerr << "x: (" << _x.transpose() << ")" << std::endl;
   std::cerr << "H^T * A * _x = (" << (H * _A * _x).transpose() << ")" << std::endl;
@@ -396,10 +396,10 @@ template <typename MatrixType>
 void NNLS<MatrixType>::_addToP(Index idx)
 {
   // Update permutation matrix:
-  IndicesType &idxs = _P.indices();
+  IndicesType &idxs = _PT.indices();
 #ifdef EIGEN3_NNLS_DEBUG
   std::cerr << "NNLS(): Add index " << idxs(idx) << "@" << idx << " to passive set ("
-            << _P.indices().head(_Np).transpose() << ")" << std::endl;
+            << _PT.indices().head(_Np).transpose() << ")" << std::endl;
 #endif
 
   std::swap(idxs(idx), idxs(_Np)); _Np++;
@@ -414,14 +414,14 @@ template <typename MatrixType>
 void NNLS<MatrixType>::_remFromP(Index idx)
 {
 #ifdef EIGEN3_NNLS_DEBUG
-  std::cerr << "NNLS(): Remove Idx " << _P.indices()(idx) << "@" << idx << " from passive set ("
-            << _P.indices().head(_Np).transpose() << ")" << std::endl;
+  std::cerr << "NNLS(): Remove Idx " << _PT.indices()(idx) << "@" << idx << " from passive set ("
+            << _PT.indices().head(_Np).transpose() << ")" << std::endl;
 #endif
   // swap index with last passive one & reduce number of passive columns
-  std::swap(_P.indices()(idx), _P.indices()(_Np-1)); _Np--;
+  std::swap(_PT.indices()(idx), _PT.indices()(_Np-1)); _Np--;
   // Update QR decomposition starting from the removed index up to the end [idx, ..., _Np]
   for (Index i=idx; i<_Np; i++) {
-    Index col = _P.indices()(i);
+    Index col = _PT.indices()(i);
     internal::nnls_householder_qr_inplace_update(_QR, _qrCoeffs, _A.col(col), i, _tempVector.data());
   }
 }
@@ -436,13 +436,13 @@ void NNLS<MatrixType>::_solveLS_P(const ColVectorType &b)
   internal::nnls_householder_qr_inplace_solve(_QR, _qrCoeffs, tmp, _Np);
   _y.setZero(); _y.head(_Np) = tmp.head(_Np);
 #ifdef EIGEN3_NNLS_DEBUG
-  HouseholderQR<Matrix<Scalar, Dynamic, Dynamic> > qr( (_A*_P).leftCols(_Np) );
+  HouseholderQR<Matrix<Scalar, Dynamic, Dynamic> > qr( (_A*_PT).leftCols(_Np) );
   std::cerr << "NNLS(): Partial solution: (" << _y.head(_Np).transpose() <<
                "); True: (" << qr.solve(b).transpose() << ")" << std::endl;
 #endif
 
   // Back permute y into original column order of A
-  _y = _P*_y;
+  _y = _PT*_y;
 
   // Increment LS counter
   _num_ls++;
